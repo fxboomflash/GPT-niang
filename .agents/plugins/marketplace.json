@@ -1,0 +1,10 @@
+{
+  "name": "codex-ui-local",
+  "interface": { "displayName": "GPT 娘动态避让补充" },
+  "plugins": [{
+    "name": "codex-right-clearance",
+    "source": { "source": "local", "path": "./plugins/codex-right-clearance" },
+    "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+    "category": "Productivity"
+  }]
+}
