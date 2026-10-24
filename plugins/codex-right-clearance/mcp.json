@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "clearance": {
+      "type": "stdio",
+      "command": "powershell.exe",
+      "args": ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-WindowStyle", "Hidden", "-File", "${PLUGIN_ROOT}/scripts/Control.ps1", "-Action", "Serve"],
+      "cwd": "${PLUGIN_ROOT}"
+    }
+  }
+}
