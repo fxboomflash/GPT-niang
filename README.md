@@ -4,6 +4,8 @@
 
 GPT 娘负责角色展示、额度气泡和桌面陪伴；动态插件负责在它挡住输入框时，按实际位置和大小为输入框右侧留出空间。
 
+[下载 Windows 组合包](https://github.com/fxboomflash/GPT-niang/releases/latest) · [查看发行记录](https://github.com/fxboomflash/GPT-niang/releases)
+
 ## 包含内容
 
 | 组件 | 版本 | 来源与作用 |
