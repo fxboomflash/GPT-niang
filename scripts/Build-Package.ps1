@@ -16,6 +16,7 @@ try {
  foreach($file in Get-ChildItem -LiteralPath $buildRoot -File -Recurse -Force){
   $relative=$file.FullName.Substring($buildRoot.Length).TrimStart('\').Replace([char]92,[char]47)
   if($relative-match '(^|/)(\.git|node_modules|test-results|dist)(/|$)'){continue}
+  if($file.Extension-eq '.zip'-or $relative-eq 'SHA256SUMS.txt'){continue}
   [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip,$file.FullName,('GPT-Niang-Dynamic-Clearance/'+$relative),[IO.Compression.CompressionLevel]::Optimal)|Out-Null
  }
 }finally{$zip.Dispose()}
