@@ -1,0 +1,15 @@
+{
+  "project": "GPT-Niang",
+  "author": "T7moris",
+  "repository": "https://github.com/T7moris/GPT-Niang",
+  "release": "https://github.com/T7moris/GPT-Niang/releases/tag/v1.3.5",
+  "version": "1.3.5",
+  "asset": "gpt-niang-usage-widget-v1.3.5-windows.zip",
+  "downloadUrl": "https://github.com/T7moris/GPT-Niang/releases/download/v1.3.5/gpt-niang-usage-widget-v1.3.5-windows.zip",
+  "checksumsUrl": "https://github.com/T7moris/GPT-Niang/releases/download/v1.3.5/SHA256SUMS.txt",
+  "sha256": "ECD6A83C63727A104C4FB70756413D6C55FD50E421F41C2715BEECF465FC9272",
+  "verifiedDate": "2026-10-24",
+  "destination": "vendor/GPT-Niang",
+  "filesModified": false,
+  "relationship": "The dynamic clearance plugin supplements and optimizes GPT-Niang; GPT-Niang itself remains credited to T7moris and upstream contributors."
+}

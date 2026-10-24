@@ -1,0 +1,9 @@
+{
+  "name": "gpt-niang-dynamic-clearance-bundle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A Windows dynamic-composer-clearance supplement and optimization for T7moris/GPT-Niang, with the unmodified upstream widget bundled.",
+  "license": "SEE LICENSE IN LICENSE AND NOTICE.md",
+  "engines": { "node": ">=22" },
+  "scripts": { "test": "node --test tests/*.test.cjs", "verify": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/Verify-Package.ps1", "pack:windows": "powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/Build-Package.ps1" }
+}
