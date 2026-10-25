@@ -40,3 +40,27 @@ test('upstream credit and separate artwork license are retained',()=>{
  const license=fs.readFileSync(path.join(root,'vendor/GPT-Niang/LICENSE'),'utf8');assert(license.includes('Copyright (c) 2026 T7moris'));
  assert(fs.existsSync(path.join(root,'vendor/GPT-Niang/gpt-niang-usage/assets/CHARACTER-NOTICE.txt')));
 });
+test('user controls adjust automatic gap across sources and preserve exact manual distance',()=>{
+ const plan=planner(),observation={sources:[{status:'hidden',pets:[]},external]};
+ assert.equal(plan(input,observation,viewport,{mode:'auto',gapCssPx:4}).reserve,88);
+ assert.equal(plan(input,observation,viewport,{mode:'auto',gapCssPx:20}).reserve,104);
+ assert.equal(plan(input,{status:'hidden',pets:[]},viewport,{mode:'manual',manualClearanceCssPx:72}).reserve,72);
+ assert.equal(plan(input,external,viewport,{mode:'manual',manualClearanceCssPx:0}).reserve,0);
+});
+test('saved preferences preserve connection and widget binding and reject unsafe settings',async()=>{
+ const os=require('node:os'),temporary=fs.mkdtempSync(path.join(os.tmpdir(),'clearance-settings-test-'));
+ const previous=process.env.CODEX_HOME,folder=path.join(temporary,'plugin-data/codex-right-clearance-v3');
+ fs.mkdirSync(folder,{recursive:true});const file=path.join(folder,'settings.json');
+ fs.writeFileSync(file,JSON.stringify({enabled:false,debugPort:19328,nativePetInstallation:'keep-widget-binding',autoRestart:false}));
+ try{
+  process.env.CODEX_HOME=temporary;const {control,status}=require('../plugins/codex-right-clearance/scripts/service.cjs');
+  await control('configure',{mode:'manual',manualClearanceCssPx:72,gapCssPx:4});
+  assert.equal(status().preferences.manualClearanceCssPx,72);
+  const saved=JSON.parse(fs.readFileSync(file));assert.equal(saved.debugPort,19328);assert.equal(saved.nativePetInstallation,'keep-widget-binding');assert.equal(saved.enabled,false);assert.equal(saved.autoRestart,false);
+  await control('configure',{buttonPosition:{xRatio:0.75,yRatio:0.2}});
+  await control('configure',{gapCssPx:8});assert.deepEqual(status().preferences.buttonPosition,{xRatio:0.75,yRatio:0.2});
+  for(const position of [{xRatio:-1,yRatio:0.2},{xRatio:0.5},{xRatio:0.5,yRatio:Infinity},{xRatio:0.5,yRatio:0.5,unexpected:1}])await assert.rejects(control('configure',{buttonPosition:position}),/Invalid preference/);
+  await control('configure',{buttonPosition:null});assert.equal(status().preferences.buttonPosition,null);
+  for(const value of [{mode:'invalid'},{gapCssPx:-1},{gapCssPx:81},{gapCssPx:1.2},{manualClearanceCssPx:601},{debugPort:1234}])await assert.rejects(control('configure',value),/Invalid preference/);
+ }finally{if(previous===undefined)delete process.env.CODEX_HOME;else process.env.CODEX_HOME=previous;assert(path.dirname(temporary)===os.tmpdir());fs.rmSync(temporary,{recursive:true,force:true})}
+});

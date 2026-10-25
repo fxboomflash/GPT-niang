@@ -24,6 +24,23 @@ function write(file, value) {
   fs.renameSync(temp, file);
 }
 function settings() { return {...read(settingsFile, {enabled:false}),autoRestart:false}; }
+function validButtonPosition(value){return value===null||Boolean(value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===2&&Object.keys(value).every(key=>['xRatio','yRatio'].includes(key))&&[value.xRatio,value.yRatio].every(n=>Number.isFinite(n)&&n>=0&&n<=1));}
+function preferences() {
+  const value=settings();
+  return {mode:value.mode==='manual'?'manual':'auto',gapCssPx:Number.isInteger(value.gapCssPx)&&value.gapCssPx>=0&&value.gapCssPx<=80?value.gapCssPx:10,manualClearanceCssPx:Number.isInteger(value.manualClearanceCssPx)&&value.manualClearanceCssPx>=0&&value.manualClearanceCssPx<=600?value.manualClearanceCssPx:96,buttonPosition:validButtonPosition(value.buttonPosition)?value.buttonPosition:null};
+}
+const preferenceSchema={type:'object',properties:{mode:{type:'string',enum:['auto','manual']},gapCssPx:{type:'integer',minimum:0,maximum:80},manualClearanceCssPx:{type:'integer',minimum:0,maximum:600},buttonPosition:{anyOf:[{type:'null'},{type:'object',properties:{xRatio:{type:'number',minimum:0,maximum:1},yRatio:{type:'number',minimum:0,maximum:1}},required:['xRatio','yRatio'],additionalProperties:false}]}},additionalProperties:false};
+function savePreferences(value) {
+  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Expected a settings object.');
+  for(const [name,item]of Object.entries(value)){
+    const rule=preferenceSchema.properties[name];
+    if(!rule||rule.enum&&!rule.enum.includes(item)||rule.type==='integer'&&(!Number.isInteger(item)||item<rule.minimum||item>rule.maximum)||name==='buttonPosition'&&!validButtonPosition(item))throw Error('Invalid preference: '+name);
+  }
+  write(settingsFile,{...settings(),...value,autoRestart:false});
+  const current=read(statusFile,{});
+  if(!current.time||Date.now()-Date.parse(current.time)>15000||['stopped','disabled'].includes(current.status))startWatcher('settings-changed');
+  return {status:'configured',preferences:preferences(),appliesOnNextTick:true,clientClosed:false};
+}
 function pluginEnabled() {
   try {
     const text = fs.readFileSync(path.join(configHome,'config.toml'),'utf8');
@@ -38,15 +55,15 @@ function status() {
   const pending=registration?.enabled===true&&value.connectionSetup?.state==='connection-unavailable'&&value.status!=='active'&&value.status!=='original-layout';
   return {...value,...pending?{status:'awaiting-manual-reopen',reason:'Local startup loader is registered. This already-running client has no connection; no automatic restart will be performed.'}:{}, enabled:settings().enabled === true, pluginEnabled:pluginEnabled(),
     heartbeatFresh:Boolean(value.time && Date.now() - Date.parse(value.time) < 15000),
-    launcherRequired:false, debugPort:debugPort(), pluginVersion:'1.4.1',runtimeRevision:'dynamic-pet-2-native-widget',automaticConnectionSetup:false,clientRestartAllowed:false,clearanceMode:'dynamic-pet',fallbackClearanceCssPx:96,pollIntervalMs:300,startupRegistration:registration};
+    launcherRequired:false, debugPort:debugPort(), pluginVersion:'1.4.4',runtimeRevision:'dynamic-pet-5-draggable-button',automaticConnectionSetup:false,clientRestartAllowed:false,clearanceMode:preferences().mode,preferences:preferences(),fallbackClearanceCssPx:96,pollIntervalMs:300,startupRegistration:registration};
 }
 function startWatcher(reason='control') {
   if (!settings().enabled || !pluginEnabled()) return;
-  fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason,pid:process.pid,pluginRoot:path.resolve(__dirname,'..'),version:'1.4.1'})+'\n');
+  fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason,pid:process.pid,pluginRoot:path.resolve(__dirname,'..'),version:'1.4.4'})+'\n');
   runFile('powershell.exe',['-NoLogo','-NoProfile','-ExecutionPolicy','RemoteSigned','-WindowStyle','Hidden','-File',path.join(__dirname,'Control.ps1'),'-Action','Bootstrap'],{windowsHide:true,timeout:20000,maxBuffer:16000}).catch(error=>write(statusFile,{time:new Date().toISOString(),status:'error',reason:'Independent worker startup failed: '+error.message}));
 }
 const geometrySource=fs.readFileSync(path.join(__dirname,'pet-geometry.js'),'utf8');
-const source = geometrySource+'\n'+fs.readFileSync(path.join(__dirname,'layout.js'),'utf8') + '\n' + fs.readFileSync(path.join(__dirname,'auto-layout.js'),'utf8');
+const source = geometrySource+'\n'+fs.readFileSync(path.join(__dirname,'layout.js'),'utf8') + '\n' + fs.readFileSync(path.join(__dirname,'auto-layout.js'),'utf8')+'\n'+fs.readFileSync(path.join(__dirname,'settings-button.js'),'utf8');
 function trustedPet(value){try{const u=new URL(value);return u.protocol==='app:'&&u.hostname==='-'&&u.pathname==='/index.html'&&u.searchParams.get('initialRoute')==='/avatar-overlay'}catch{return false}}
 function frameList(tree, result=[]) { if(tree?.frame)result.push(tree.frame); for(const child of tree?.childFrames || [])frameList(child,result); return result; }
 const pause = ms => new Promise(resolve => setTimeout(resolve,ms));
@@ -64,7 +81,7 @@ async function watch() {
   if (!acquired) return;
   const clients = new Map();
   let stopping = false, lastSeen = Date.now(), verifiedAt = 0, lastValidation = null, lastSetup=0, verifiedPort=null, lastConnectionSetup=null;
-  let petObservation={status:'unavailable',pets:[]},lastPet=null,lastPetAt=0,lastReportAt=0,lastReportSignature='';
+  let petObservation={status:'unavailable',pets:[]},lastPet=null,lastPetAt=0,lastReportAt=0,lastReportSignature='',lastSettingsOpen=0;
   process.on('SIGTERM',()=>{stopping=true;}); process.on('SIGINT',()=>{stopping=true;});
   const report = value => {
     const signature=JSON.stringify([value.status,value.reason,value.results?.map(r=>[r.status,r.clearanceCssPx,r.requestedClearanceCssPx,r.placement,r.petReason])]);
@@ -78,9 +95,15 @@ async function watch() {
     for(const frame of frames) {
       const contexts=[...client.contexts.values()].filter(c=>c.auxData?.isDefault===true && c.auxData.frameId===frame.id);
       if(contexts.length!==1)continue;
-      const output=await client.command('Runtime.evaluate',{expression:source+'\nautoClearance('+JSON.stringify(action)+','+JSON.stringify(petObservation)+');',contextId:contexts[0].id,returnByValue:true});
+      const options=JSON.stringify(preferences());
+      const output=await client.command('Runtime.evaluate',{expression:source+'\n(()=>{const result=autoClearance('+JSON.stringify(action)+','+JSON.stringify(petObservation)+','+options+');return {...result,settingsButton:codexClearanceSettingsButton('+JSON.stringify(action)+','+options+')}})();',contextId:contexts[0].id,returnByValue:true});
       if(output.exceptionDetails)throw Error('Layout evaluation failed: '+(output.exceptionDetails.exception?.description||output.exceptionDetails.text));
       const result=output.result?.value;
+      if(result?.settingsButton?.positionChanged&&validButtonPosition(result.settingsButton.positionChanged))savePreferences({buttonPosition:result.settingsButton.positionChanged});
+      if(result?.settingsButton?.requestOpen===true&&Date.now()-lastSettingsOpen>=1000){
+        lastSettingsOpen=Date.now();
+        control('open_settings').catch(error=>fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason:'settings-open-failed',message:error.message.slice(0,500)})+'\n'));
+      }
       if(result?.status==='active' && !(result.geometryVerified===true&&Number.isFinite(result.requestedClearanceCssPx)&&result.requestedClearanceCssPx>0&&Math.abs(result.clearanceCssPx-result.requestedClearanceCssPx)<=1&&Math.abs(result.leftShiftCssPx)<=1&&Math.abs(result.heightChangeCssPx)<=1&&result.domButtonsUncovered===true))throw Error('Active input geometry did not pass verification.');
       results.push(result);
     }
@@ -126,7 +149,7 @@ async function watch() {
             results.push(...await evaluate(client,'tick'));
           } catch(error) {clients.get(target.id)?.close();clients.delete(target.id);results.push({status:'error',reason:error.message.slice(0,1000)});}
         }
-        report({status:results.some(x=>x?.status==='error')?'error':results.some(x=>x?.status==='active')?'active':results.some(x=>x?.status==='original')?'original-layout':'waiting-for-chat',activeInputs:results.filter(x=>x?.status==='active').length,version:lastValidation.version,debugPort:port,runtimeRevision:'dynamic-pet-2-native-widget',pluginVersion:'1.4.1',clientRestartAllowed:false,pollIntervalMs:300,petMeasurement:petObservation,results});
+        report({status:results.some(x=>x?.status==='error')?'error':results.some(x=>x?.status==='active')?'active':results.some(x=>x?.status==='original')?'original-layout':'waiting-for-chat',activeInputs:results.filter(x=>x?.status==='active').length,version:lastValidation.version,debugPort:port,runtimeRevision:'dynamic-pet-5-draggable-button',pluginVersion:'1.4.4',clientRestartAllowed:false,pollIntervalMs:300,petMeasurement:petObservation,results});
       } catch(error) {
         nextDelay=2500;
         await restoreAll(); for(const client of clients.values())client.close();clients.clear(); verifiedAt=0;
@@ -148,8 +171,13 @@ async function watch() {
     await restoreAll(); report({status:'stopped',restored:true});
   } finally {nativePet.stop();for(const client of clients.values())client.close();guard.close();}
 }
-async function control(action) {
+async function control(action,params={}) {
   if(action==='status')return status();
+  if(action==='configure')return savePreferences(params);
+  if(action==='open_settings'){
+    const result=await runFile('powershell.exe',['-NoLogo','-NoProfile','-STA','-ExecutionPolicy','RemoteSigned','-WindowStyle','Hidden','-File',path.join(__dirname,'Settings.ps1'),'-HomeDirectory',configHome,'-NodePath',process.execPath,'-Launch'],{windowsHide:true,timeout:12000,maxBuffer:16000});
+    return JSON.parse(result.stdout.replace(/^\uFEFF/,''));
+  }
   if(action==='disable') {write(settingsFile,{...settings(),enabled:false});let startupRemoved=false;try{await runFile('powershell.exe',['-NoLogo','-NoProfile','-ExecutionPolicy','RemoteSigned','-WindowStyle','Hidden','-File',path.join(__dirname,'RegisterStartup.ps1'),'-Action','Remove'],{windowsHide:true,timeout:15000,maxBuffer:16000});startupRemoved=true;}catch{}return {status:'disabling',restoresOnNextTick:true,startupRemoved};}
   if(action==='enable') {write(settingsFile,{...settings(),enabled:true});startWatcher();return {status:'enabled',launcherRequired:false,clientClosed:false};}
   if(action==='reapply') {startWatcher();return status();}
@@ -157,18 +185,18 @@ async function control(action) {
 }
 function serve() {
   const readline = require('node:readline').createInterface({input:process.stdin});
-  const names=['status','enable','disable','reapply'];
-  const descriptions={status:'Read the local right-clearance plugin status.',enable:'Enable bottom-input clearance based on the measured pet position and size.',disable:'Disable right clearance and restore the input box.',reapply:'Start or reconnect the automatic clearance worker.'};
+  const names=['status','enable','disable','reapply','configure','open_settings'];
+  const descriptions={status:'Read the local right-clearance plugin status.',enable:'Enable bottom-input clearance based on the measured pet position and size.',disable:'Disable right clearance and restore the input box.',reapply:'Start or reconnect the automatic clearance worker.',configure:'Set automatic pet clearance with adjustable extra gap, or a manual bottom-input clearance in CSS pixels. Centered inputs stay unchanged.',open_settings:'Open the local clearance settings window so the user can adjust sliders without restarting the client.'};
   readline.on('line',async line=>{
     let request;
     try {
       if(line.length>1048576)throw Error('Request too large.');
       request=JSON.parse(line);if(request.id===undefined)return;
       let result;
-      if(request.method==='initialize') {result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'codex-right-clearance',version:'1.4.1'}};startWatcher('mcp-initialize');}
+      if(request.method==='initialize') {result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'codex-right-clearance',version:'1.4.4'}};startWatcher('mcp-initialize');}
       else if(request.method==='ping')result={};
-      else if(request.method==='tools/list')result={tools:names.map(name=>({name,description:descriptions[name],inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:name==='status',destructiveHint:false,openWorldHint:false}}))};
-      else if(request.method==='tools/call') {if(!names.includes(request.params?.name))throw Error('Unknown tool.');result={content:[{type:'text',text:JSON.stringify(await control(request.params.name))}]};}
+      else if(request.method==='tools/list')result={tools:names.map(name=>({name,description:descriptions[name],inputSchema:name==='configure'?preferenceSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:name==='status',destructiveHint:false,openWorldHint:false}}))};
+      else if(request.method==='tools/call') {if(!names.includes(request.params?.name))throw Error('Unknown tool.');result={content:[{type:'text',text:JSON.stringify(await control(request.params.name,request.params.arguments??{}))}]};}
       else {process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:-32601,message:'Method not found'}})+'\n');return;}
       process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,result})+'\n');
     } catch(error) {if(request?.id!==undefined)process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:-32602,message:error.message}})+'\n');}
@@ -177,6 +205,8 @@ function serve() {
 module.exports={status,pluginEnabled,control};
 if(require.main===module) {
   const action=process.argv[2]||'status';
-  (action==='serve'?Promise.resolve(serve()):action==='watch'?watch():control(action).then(value=>console.log(JSON.stringify(value,null,2))))
+  const settingsAt=process.argv.indexOf('--settings-base64');
+  const params=settingsAt>=0?JSON.parse(Buffer.from(process.argv[settingsAt+1],'base64').toString('utf8')):{};
+  (action==='serve'?Promise.resolve(serve()):action==='watch'?watch():control(action,params).then(value=>console.log(JSON.stringify(value,null,2))))
     .catch(error=>{console.error(error.message);process.exitCode=1;});
 }

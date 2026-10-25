@@ -12,7 +12,7 @@ $bundleManifest=Get-BundleJson (Join-Path $bundleRoot 'plugins\codex-right-clear
 $bundleVersion=$bundleManifest.version
 $bundleCache=Join-Path $bundleHome ('plugins\cache\codex-ui-local\codex-right-clearance\'+$bundleVersion)
 if($CheckOnly){
- [ordered]@{ok=$true;readOnly=$true;bundleVersion='1.0.0';clearanceVersion=$bundleVersion;nodeMajor=[int](& $bundleNode -p 'parseInt(process.versions.node)');codexPackageVersion=[string]$bundlePackage.Version;existingWidgetFound=[bool]$bundleWidget;wouldInstallUpstreamWidget=(-not [bool]$bundleWidget);existingClearanceFilesMatch=(Test-BundleCache (Join-Path $bundleRoot 'plugins\codex-right-clearance') $bundleCache);clientWouldBeRestarted=$false}|ConvertTo-Json -Compress
+ [ordered]@{ok=$true;readOnly=$true;bundleVersion=(Get-BundleJson (Join-Path $bundleRoot 'package.json')).version;clearanceVersion=$bundleVersion;nodeMajor=[int](& $bundleNode -p 'parseInt(process.versions.node)');codexPackageVersion=[string]$bundlePackage.Version;existingWidgetFound=[bool]$bundleWidget;wouldInstallUpstreamWidget=(-not [bool]$bundleWidget);existingClearanceFilesMatch=(Test-BundleCache (Join-Path $bundleRoot 'plugins\codex-right-clearance') $bundleCache);clientWouldBeRestarted=$false}|ConvertTo-Json -Compress
  exit 0
 }
 $env:CODEX_HOME=$bundleHome

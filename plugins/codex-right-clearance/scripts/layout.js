@@ -4,12 +4,32 @@ function frameClearance(action='apply',options={}) {
  function visible(e){const r=e.getBoundingClientRect();return r.width>0&&r.height>0}
  function bottomDocked(e){const r=e.getBoundingClientRect(),gap=innerHeight-r.bottom;return gap>=-1&&gap<=Math.min(96,innerHeight*.15)}
  function queryDeep(root,selector){
-  const trees=[root],found=[];let examined=0;
-  for(let i=0;i<trees.length;i++){
-   if(trees.length>40)throw Error('Shadow-root observation bound reached.');
-   found.push(...trees[i].querySelectorAll(selector));
-   for(const e of trees[i].querySelectorAll('*')){if(++examined>15000)throw Error('DOM observation bound reached.');if(e.shadowRoot)trees.push(e.shadowRoot)}
+  // Query semantic markers directly, regardless of conversation length. Discover
+  // shadow trees incrementally and inspect only newly added subtrees afterwards.
+  const cacheKey='__codexClearanceShadowIndexV1';
+  let index=window[cacheKey];
+  if(!index){
+   index={trees:new Map(),queue:[],queued:new Set(),visited:0};
+   index.enqueue=node=>{if(node.nodeType!==1&&node.nodeType!==9&&node.nodeType!==11)return;if(!index.queued.has(node)){index.queued.add(node);index.queue.push({root:node,walker:null})}};
+   index.observe=tree=>{if(index.trees.has(tree))return;const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)index.enqueue(node)});observer.observe(tree,{childList:true,subtree:true});index.trees.set(tree,observer);index.enqueue(tree)};
+   index.observe(document);window[cacheKey]=index;
   }
+  for(const [tree,observer]of index.trees)if(tree!==document&&!tree.host.isConnected){observer.disconnect();index.trees.delete(tree)}
+  // A large transcript never throws or blocks composer lookup. Pending shadow
+  // discovery resumes on the next call instead of rescanning the entire page.
+  let budget=1000;
+  while(index.queue.length&&budget>0){
+   const task=index.queue[0];
+   if(!task.root.isConnected){index.queue.shift();index.queued.delete(task.root);continue}
+   let element;
+   if(!task.walker){task.walker=document.createTreeWalker(task.root,NodeFilter.SHOW_ELEMENT);element=task.root.nodeType===1?task.root:task.walker.nextNode()}
+   else element=task.walker.nextNode();
+   if(!element){index.queue.shift();index.queued.delete(task.root);continue}
+   budget--;index.visited++;
+   if(element.shadowRoot)index.observe(element.shadowRoot);
+  }
+  const found=[...root.querySelectorAll(selector)];
+  for(const tree of index.trees.keys())if(tree!==root&&tree!==document&&(root===document||contains(root,tree.host)))found.push(...tree.querySelectorAll(selector));
   return found;
  }
  function contains(root,child){for(let e=child;e;){if(e===root)return true;e=e.parentElement||e.getRootNode()?.host}return false}

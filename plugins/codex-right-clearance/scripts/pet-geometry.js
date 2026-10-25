@@ -28,10 +28,15 @@ function codexScreenTransform(viewport) {
  const border=Math.abs(difference)<=4?Math.max(0,difference/2):0;
  return {x:viewport.screenX+border,y:viewport.screenY+Math.max(0,viewport.outerHeight-viewport.innerHeight*scale-border),scale};
 }
-function codexPetClearancePlan(input,observation,viewport) {
+function codexPetClearancePlan(input,observation,viewport,preferences={}) {
+ const padding=Number.isInteger(preferences.gapCssPx)&&preferences.gapCssPx>=0&&preferences.gapCssPx<=80?preferences.gapCssPx:10;
+ if(preferences.mode==='manual'){
+  const reserve=Number.isInteger(preferences.manualClearanceCssPx)&&preferences.manualClearanceCssPx>=0&&preferences.manualClearanceCssPx<=600?preferences.manualClearanceCssPx:96;
+  return {reserve,requestedReserve:reserve,mode:'manual',reason:'User-selected bottom-input clearance.'};
+ }
  const fallback={reserve:96,requestedReserve:96,mode:'fallback',reason:'Pet geometry unavailable; keeping the previous fixed clearance.'};
  if(Array.isArray(observation?.sources)){
-  const plans=observation.sources.map(source=>codexPetClearancePlan(input,source,viewport));
+  const plans=observation.sources.map(source=>codexPetClearancePlan(input,source,viewport,preferences));
   const reserve=Math.max(0,...plans.map(p=>p.reserve));
   return {reserve,requestedReserve:reserve,mode:plans.some(p=>p.mode==='fallback')?'fallback':'dynamic',overlappingPets:plans.reduce((n,p)=>n+(p.overlappingPets||0),0),
    reason:plans.filter(p=>p.reserve===reserve).map(p=>p.reason).join(' '),providers:observation.sources.map(p=>p.provider||'builtin-avatar')};
@@ -55,7 +60,7 @@ function codexPetClearancePlan(input,observation,viewport) {
   local={x:h.left,y:Math.max(h.top,top),scale:cssScale};petFrame={x:0,y:0,scale:1};
  }
  if(!local||!petFrame)return fallback;
- const padding=10,box={left:local.x+input.left*local.scale,top:local.y+input.top*local.scale,right:local.x+input.right*local.scale,bottom:local.y+input.bottom*local.scale};
+ const box={left:local.x+input.left*local.scale,top:local.y+input.top*local.scale,right:local.x+input.right*local.scale,bottom:local.y+input.bottom*local.scale};
  let reserve=0,overlaps=0,valid=0;
  for(const r of observation.pets){
   if(!r||![r.left,r.top,r.right,r.bottom].every(Number.isFinite)||r.right<=r.left||r.bottom<=r.top)continue;

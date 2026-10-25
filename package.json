@@ -1,6 +1,6 @@
 {
   "name": "gpt-niang-dynamic-clearance-bundle",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A Windows dynamic-composer-clearance supplement and optimization for T7moris/GPT-Niang, with the unmodified upstream widget bundled.",
   "license": "SEE LICENSE IN LICENSE AND NOTICE.md",

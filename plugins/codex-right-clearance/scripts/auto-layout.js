@@ -1,4 +1,4 @@
-function autoClearance(action,observation) {
+function autoClearance(action,observation,preferences={}) {
  const pluginKey='__codexRightClearancePlugin';
  if(action==='restore'){delete window[pluginKey];return frameClearance('restore')}
  let active=window.__codexFrameClearanceV2;
@@ -12,7 +12,7 @@ function autoClearance(action,observation) {
  const measurement=active?{status:'measured',rect:{...active.before,top:current.top,bottom:current.bottom,height:current.height},
   placement:innerHeight-current.bottom>=-1&&innerHeight-current.bottom<=Math.min(96,innerHeight*.15)?'bottom':'centered'}:frameClearance('measure');
  const plan=measurement.status==='measured'&&typeof codexPetClearancePlan==='function'?
-  codexPetClearancePlan(measurement.rect,observation,codexViewportGeometry()):{reserve:96,requestedReserve:96,mode:'fallback'};
+  codexPetClearancePlan(measurement.rect,observation,codexViewportGeometry(),preferences):{reserve:96,requestedReserve:96,mode:'fallback'};
  const finish=(result,naturalHeightChangeCssPx=0)=>{
   const state=window.__codexFrameClearanceV2;
   if(state){const parent=state.target.parentElement;window[pluginKey]={parent,parentWidth:parent?.getBoundingClientRect().width??null,left:state.target.getBoundingClientRect().left}}
