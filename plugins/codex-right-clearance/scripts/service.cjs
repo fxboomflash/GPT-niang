@@ -55,11 +55,11 @@ function status() {
   const pending=registration?.enabled===true&&value.connectionSetup?.state==='connection-unavailable'&&value.status!=='active'&&value.status!=='original-layout';
   return {...value,...pending?{status:'awaiting-manual-reopen',reason:'Local startup loader is registered. This already-running client has no connection; no automatic restart will be performed.'}:{}, enabled:settings().enabled === true, pluginEnabled:pluginEnabled(),
     heartbeatFresh:Boolean(value.time && Date.now() - Date.parse(value.time) < 15000),
-    launcherRequired:false, debugPort:debugPort(), pluginVersion:'1.4.4',runtimeRevision:'dynamic-pet-5-draggable-button',automaticConnectionSetup:false,clientRestartAllowed:false,clearanceMode:preferences().mode,preferences:preferences(),fallbackClearanceCssPx:96,pollIntervalMs:300,startupRegistration:registration};
+    launcherRequired:false, debugPort:debugPort(), pluginVersion:'1.4.6',runtimeRevision:'dynamic-pet-7-attachment-reflow',automaticConnectionSetup:false,clientRestartAllowed:false,clearanceMode:preferences().mode,preferences:preferences(),fallbackClearanceCssPx:96,pollIntervalMs:300,startupRegistration:registration};
 }
 function startWatcher(reason='control') {
   if (!settings().enabled || !pluginEnabled()) return;
-  fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason,pid:process.pid,pluginRoot:path.resolve(__dirname,'..'),version:'1.4.4'})+'\n');
+  fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason,pid:process.pid,pluginRoot:path.resolve(__dirname,'..'),version:'1.4.6'})+'\n');
   runFile('powershell.exe',['-NoLogo','-NoProfile','-ExecutionPolicy','RemoteSigned','-WindowStyle','Hidden','-File',path.join(__dirname,'Control.ps1'),'-Action','Bootstrap'],{windowsHide:true,timeout:20000,maxBuffer:16000}).catch(error=>write(statusFile,{time:new Date().toISOString(),status:'error',reason:'Independent worker startup failed: '+error.message}));
 }
 const geometrySource=fs.readFileSync(path.join(__dirname,'pet-geometry.js'),'utf8');
@@ -104,7 +104,7 @@ async function watch() {
         lastSettingsOpen=Date.now();
         control('open_settings').catch(error=>fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason:'settings-open-failed',message:error.message.slice(0,500)})+'\n'));
       }
-      if(result?.status==='active' && !(result.geometryVerified===true&&Number.isFinite(result.requestedClearanceCssPx)&&result.requestedClearanceCssPx>0&&Math.abs(result.clearanceCssPx-result.requestedClearanceCssPx)<=1&&Math.abs(result.leftShiftCssPx)<=1&&Math.abs(result.heightChangeCssPx)<=1&&result.domButtonsUncovered===true))throw Error('Active input geometry did not pass verification.');
+      if(result?.status==='active' && !(result.geometryVerified===true&&Number.isFinite(result.requestedClearanceCssPx)&&result.requestedClearanceCssPx>0&&Math.abs(result.clearanceCssPx-result.requestedClearanceCssPx)<=1&&Math.abs(result.leftShiftCssPx)<=1&&Math.abs(result.bottomShiftCssPx??0)<=1&&(Math.abs(result.heightChangeCssPx)<=1||result.naturalHeightReflowVerified===true)&&result.domButtonsUncovered===true))throw Error('Active input geometry did not pass verification.');
       results.push(result);
     }
     return results;
@@ -149,7 +149,7 @@ async function watch() {
             results.push(...await evaluate(client,'tick'));
           } catch(error) {clients.get(target.id)?.close();clients.delete(target.id);results.push({status:'error',reason:error.message.slice(0,1000)});}
         }
-        report({status:results.some(x=>x?.status==='error')?'error':results.some(x=>x?.status==='active')?'active':results.some(x=>x?.status==='original')?'original-layout':'waiting-for-chat',activeInputs:results.filter(x=>x?.status==='active').length,version:lastValidation.version,debugPort:port,runtimeRevision:'dynamic-pet-5-draggable-button',pluginVersion:'1.4.4',clientRestartAllowed:false,pollIntervalMs:300,petMeasurement:petObservation,results});
+        report({status:results.some(x=>x?.status==='error')?'error':results.some(x=>x?.status==='active')?'active':results.some(x=>x?.status==='original')?'original-layout':'waiting-for-chat',activeInputs:results.filter(x=>x?.status==='active').length,version:lastValidation.version,debugPort:port,runtimeRevision:'dynamic-pet-7-attachment-reflow',pluginVersion:'1.4.6',clientRestartAllowed:false,pollIntervalMs:300,petMeasurement:petObservation,results});
       } catch(error) {
         nextDelay=2500;
         await restoreAll(); for(const client of clients.values())client.close();clients.clear(); verifiedAt=0;
@@ -193,7 +193,7 @@ function serve() {
       if(line.length>1048576)throw Error('Request too large.');
       request=JSON.parse(line);if(request.id===undefined)return;
       let result;
-      if(request.method==='initialize') {result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'codex-right-clearance',version:'1.4.4'}};startWatcher('mcp-initialize');}
+      if(request.method==='initialize') {result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'codex-right-clearance',version:'1.4.6'}};startWatcher('mcp-initialize');}
       else if(request.method==='ping')result={};
       else if(request.method==='tools/list')result={tools:names.map(name=>({name,description:descriptions[name],inputSchema:name==='configure'?preferenceSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:name==='status',destructiveHint:false,openWorldHint:false}}))};
       else if(request.method==='tools/call') {if(!names.includes(request.params?.name))throw Error('Unknown tool.');result={content:[{type:'text',text:JSON.stringify(await control(request.params.name,request.params.arguments??{}))}]};}

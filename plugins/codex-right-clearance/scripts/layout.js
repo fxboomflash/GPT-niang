@@ -39,13 +39,37 @@ function frameClearance(action='apply',options={}) {
   if(!s.target.isConnected){restore();return{status:'restored',reason:'Input was recreated.'}}
   if(!bottomDocked(s.target)){restore();return{status:'original',placement:'centered',reason:'Centered input keeps its original layout.'}}
   const after=rect(s.target);
-  const result={status:'applied',clearanceCssPx:s.before.right-after.right,leftShiftCssPx:after.left-s.before.left,inputWidthCssPx:after.width,heightChangeCssPx:after.height-s.before.height};
-  if(innerWidth!==s.viewport[0]||innerHeight!==s.viewport[1]||Math.abs(result.leftShiftCssPx)>1||Math.abs(result.clearanceCssPx-(s.reserve??96))>1||after.width<minWidth||Math.abs(result.heightChangeCssPx)>1){restore();return{status:'restored',reason:'Layout changed outside the approved dimensions.',measured:result}}
-  const buttons=queryDeep(s.target,'button').filter(visible);
+  const result={status:'applied',clearanceCssPx:s.before.right-after.right,leftShiftCssPx:after.left-s.before.left,inputWidthCssPx:after.width,heightChangeCssPx:after.height-s.before.height,bottomShiftCssPx:after.bottom-s.before.bottom};
+  // Width changes may naturally wrap attachment labels or editor text. Preserve
+  // the bottom anchor instead of treating that intrinsic height as a failure.
+  result.naturalHeightReflowVerified=Math.abs(result.heightChangeCssPx)>1&&Math.abs(result.bottomShiftCssPx)<=1;
+  if(innerWidth!==s.viewport[0]||innerHeight!==s.viewport[1]||Math.abs(result.leftShiftCssPx)>1||Math.abs(result.clearanceCssPx-(s.reserve??96))>1||after.width<minWidth||Math.abs(result.bottomShiftCssPx)>1){restore();return{status:'restored',reason:'Layout changed outside the approved dimensions.',measured:result}}
+  // Attachment close buttons exist in the DOM while intentionally transparent
+  // and non-interactive. They must not fail the composer hit-test guard.
+  function interactive(button){
+   if(!visible(button))return false;
+   const style=getComputedStyle(button);
+   if(style.visibility==='hidden'||style.visibility==='collapse'||style.pointerEvents==='none')return false;
+   for(let e=button;e;e=e.parentElement||e.getRootNode()?.host){const style=getComputedStyle(e);if(style.display==='none'||Number(style.opacity)===0)return false}
+   return true;
+  }
+  // Offscreen cards in an attachment carousel are intentionally clipped by an
+  // inner scroll area. Keep checking all toolbar buttons and visible cards.
+  function clippedByInnerScroll(button){
+   const r=button.getBoundingClientRect();
+   for(let e=button.parentElement||button.getRootNode()?.host;e&&e!==s.target;e=e.parentElement||e.getRootNode()?.host){
+    const style=getComputedStyle(e),box=e.getBoundingClientRect();
+    if(['auto','scroll','hidden','clip'].includes(style.overflowX)&&e.scrollWidth>e.clientWidth+1&&(r.left<box.left-1||r.right>box.right+1))return true;
+    if(['auto','scroll','hidden','clip'].includes(style.overflowY)&&e.scrollHeight>e.clientHeight+1&&(r.top<box.top-1||r.bottom>box.bottom+1))return true;
+   }
+   return false;
+  }
+  const interactiveButtons=queryDeep(s.target,'button').filter(interactive);
+  const buttons=interactiveButtons.filter(button=>!clippedByInnerScroll(button));
   let blocked=0;
   for(const button of buttons){const r=button.getBoundingClientRect();let tree=button.getRootNode();const hit=typeof tree.elementFromPoint==='function'?tree.elementFromPoint(r.left+r.width/2,r.top+r.height/2):document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(r.left<after.left-1||r.right>after.right+1||!hit||!contains(button,hit))blocked++}
   if(blocked){restore();return{status:'restored',reason:'A button was clipped or covered inside the page.',blockedButtons:blocked}}
-  return{...result,visibleButtons:buttons.length,domButtonsUncovered:true,petOverlayVisuallyVerified:false};
+  return{...result,visibleButtons:buttons.length,scrollClippedButtons:interactiveButtons.length-buttons.length,domButtonsUncovered:true,petOverlayVisuallyVerified:false};
  }
  if(action==='restore')return restore();
  if(action==='verify')return verify();
