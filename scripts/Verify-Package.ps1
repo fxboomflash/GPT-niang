@@ -8,7 +8,7 @@ foreach($file in Get-ChildItem -LiteralPath $verifyRoot -Filter '*.ps1' -Recurse
 }
 if($verifyErrors.Count){throw ($verifyErrors-join "`n")}
 foreach($file in Get-ChildItem -LiteralPath $verifyRoot -Filter '*.json' -Recurse -File -Force){$null=Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8|ConvertFrom-Json}
-$required=@('README.md','LICENSE','NOTICE.md','UPSTREAM.json','Install.ps1','Disable.ps1','.agents\plugins\marketplace.json','plugins\codex-right-clearance\native\NativePetGeometry.cs','vendor\GPT-Niang\LICENSE','vendor\GPT-Niang\gpt-niang-usage\assets\CHARACTER-NOTICE.txt')
+$required=@('README.md','LICENSE','NOTICE.md','UPSTREAM.json','Install.ps1','Disable.ps1','.agents\plugins\marketplace.json','plugins\codex-right-clearance\native\NativePetGeometry.cs','vendor\GPT-Niang\LICENSE','vendor\GPT-Niang\gpt-niang-usage\assets\CHARACTER-NOTICE.txt','scripts\Apply-WidgetAudioFix.ps1','patches\widget-audio\manifest.json','patches\widget-audio\runtime\audio.ps1','patches\widget-audio\runtime\ui-settings.ps1')
 foreach($relative in $required){if(-not (Test-Path -LiteralPath (Join-Path $verifyRoot $relative) -PathType Leaf)){throw ('Missing required file: '+$relative)}}
 foreach($line in Get-Content -LiteralPath (Join-Path $verifyRoot 'UPSTREAM-FILES.sha256') -Encoding UTF8){
  if($line-notmatch '^([0-9A-Fa-f]{64})  (.+)$'){throw 'Invalid upstream file manifest.'}
@@ -23,5 +23,11 @@ if($forbidden.Count){throw ('Runtime/private/build files must not ship: '+($forb
 . (Join-Path $PSScriptRoot 'Bundle.Common.ps1')
 $verifyNode=Find-BundleNode
 Push-Location $verifyRoot
-try{& $verifyNode --test 'tests/geometry.test.cjs';if($LASTEXITCODE-ne 0){throw 'Package regression tests failed.'}}finally{Pop-Location}
+try{
+ & $verifyNode --test 'tests/*.test.cjs';if($LASTEXITCODE-ne 0){throw 'Package regression tests failed.'}
+ foreach($test in Get-ChildItem -LiteralPath (Join-Path $verifyRoot 'tests') -Filter '*.test.ps1' -File){
+  & powershell.exe -NoProfile -STA -ExecutionPolicy RemoteSigned -File $test.FullName
+  if($LASTEXITCODE-ne 0){throw ('Package PowerShell regression failed: '+$test.Name)}
+ }
+}finally{Pop-Location}
 [ordered]@{passed=$true;powerShellSyntax=$true;jsonSyntax=$true;requiredNotices=$true;runtimeFilesExcluded=$true;fileCount=@(Get-ChildItem -LiteralPath $verifyRoot -Recurse -File -Force).Count}|ConvertTo-Json -Compress

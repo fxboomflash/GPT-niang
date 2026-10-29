@@ -18,7 +18,7 @@ function autoClearance(action,observation,preferences={}) {
   if(state){const parent=state.target.parentElement;window[pluginKey]={parent,parentWidth:parent?.getBoundingClientRect().width??null,left:state.target.getBoundingClientRect().left}}
   else delete window[pluginKey];
   return {...result,status:state&&['applied','already-applied'].includes(result.status)?'active':result.status==='original'?'original':'waiting',
-   geometryVerified:Boolean(state&&['applied','already-applied'].includes(result.status)),naturalHeightChangeCssPx,
+   geometryVerified:Boolean(state&&['applied','already-applied'].includes(result.status)),naturalHeightChangeCssPx,placement:measurement.placement,
    clearanceMode:plan.mode,requestedClearanceCssPx:plan.requestedReserve,petReason:plan.reason,overlappingPets:plan.overlappingPets??0};
  };
  if(active){

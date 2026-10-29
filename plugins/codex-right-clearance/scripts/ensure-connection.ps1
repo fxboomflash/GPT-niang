@@ -11,6 +11,7 @@ if(-not $package -or $package.PackageFamilyName-ne 'OpenAI.Codex_2p2nqsd0c76g0')
 $exe=Join-Path $package.InstallLocation 'app\ChatGPT.exe'
 $main=Get-CimInstance Win32_Process -Filter "Name='ChatGPT.exe'"|Where-Object {$_.ExecutablePath-eq $exe-and $_.CommandLine-notmatch '(?:^|\s)--type='}|Select-Object -First 1
 if(-not $main){[ordered]@{state='not-running';clientRestartAllowed=$false}|ConvertTo-Json -Compress;exit 0}
+$startedAt=$main.CreationDate.ToUniversalTime().ToString('o')
 $port=if($settings.debugPort){[int]$settings.debugPort}else{19327}
 $configuredPort=[regex]::Match($main.CommandLine,'(?:^|\s)--remote-debugging-port=(\d+)(?:\s|$)')
 if($configuredPort.Success){$port=[int]$configuredPort.Groups[1].Value}
@@ -23,7 +24,7 @@ foreach($listener in $listeners){
 }
 if($owned){
  if($settings.debugPort-ne $port){$settings|Add-Member -NotePropertyName debugPort -NotePropertyValue $port -Force;$settings|Add-Member -NotePropertyName autoRestart -NotePropertyValue $false -Force;[IO.File]::WriteAllText($settingsPath,($settings|ConvertTo-Json -Depth 5))}
- [ordered]@{state='connected';version=[string]$package.Version;port=$port;clientRestartAllowed=$false}|ConvertTo-Json -Compress;exit 0
+ [ordered]@{state='connected';pid=$main.ProcessId;startedAt=$startedAt;packageFullName=$package.PackageFullName;version=[string]$package.Version;port=$port;clientRestartAllowed=$false}|ConvertTo-Json -Compress;exit 0
 }
 $reason=if($configuredPort.Success){'Configured connection is not ready; leaving the client running.'}else{'This client was opened without a debug connection; leaving its layout unchanged.'}
-[ordered]@{state='connection-unavailable';pid=$main.ProcessId;reason=$reason;clientRestartAllowed=$false}|ConvertTo-Json -Compress
+[ordered]@{state='connection-unavailable';pid=$main.ProcessId;startedAt=$startedAt;packageFullName=$package.PackageFullName;reason=$reason;clientRestartAllowed=$false}|ConvertTo-Json -Compress

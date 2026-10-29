@@ -1,4 +1,4 @@
-param([switch]$CheckOnly,[string]$WidgetInstallation)
+﻿param([switch]$CheckOnly,[string]$WidgetInstallation)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'scripts\Bundle.Common.ps1')
 $bundleRoot=$PSScriptRoot
@@ -12,7 +12,8 @@ $bundleManifest=Get-BundleJson (Join-Path $bundleRoot 'plugins\codex-right-clear
 $bundleVersion=$bundleManifest.version
 $bundleCache=Join-Path $bundleHome ('plugins\cache\codex-ui-local\codex-right-clearance\'+$bundleVersion)
 if($CheckOnly){
- [ordered]@{ok=$true;readOnly=$true;bundleVersion=(Get-BundleJson (Join-Path $bundleRoot 'package.json')).version;clearanceVersion=$bundleVersion;nodeMajor=[int](& $bundleNode -p 'parseInt(process.versions.node)');codexPackageVersion=[string]$bundlePackage.Version;existingWidgetFound=[bool]$bundleWidget;wouldInstallUpstreamWidget=(-not [bool]$bundleWidget);existingClearanceFilesMatch=(Test-BundleCache (Join-Path $bundleRoot 'plugins\codex-right-clearance') $bundleCache);clientWouldBeRestarted=$false}|ConvertTo-Json -Compress
+ $bundleAudioPlan=if($bundleWidget){& (Join-Path $bundleRoot 'scripts\Apply-WidgetAudioFix.ps1') -WidgetInstallation $bundleWidget -CheckOnly|ConvertFrom-Json}else{@{ok=$true;wouldApplyAfterWidgetInstall=$true}}
+ [ordered]@{ok=$true;readOnly=$true;audioPatch=$bundleAudioPlan;bundleVersion=(Get-BundleJson (Join-Path $bundleRoot 'package.json')).version;clearanceVersion=$bundleVersion;nodeMajor=[int](& $bundleNode -p 'parseInt(process.versions.node)');codexPackageVersion=[string]$bundlePackage.Version;existingWidgetFound=[bool]$bundleWidget;wouldInstallUpstreamWidget=(-not [bool]$bundleWidget);existingClearanceFilesMatch=(Test-BundleCache (Join-Path $bundleRoot 'plugins\codex-right-clearance') $bundleCache);clientWouldBeRestarted=$false}|ConvertTo-Json -Compress
  exit 0
 }
 $env:CODEX_HOME=$bundleHome
@@ -26,6 +27,8 @@ if(-not $bundleWidget){
 }
 $bundleWidgetConfig=Get-BundleJson $bundleWidget
 if(-not $bundleWidgetConfig.appDir-or -not $bundleWidgetConfig.dataDir-or -not (Test-Path -LiteralPath (Join-Path $bundleWidgetConfig.appDir 'widget.ps1'))){throw 'The GPT-Niang installation record is invalid.'}
+& (Join-Path $bundleRoot 'scripts\Apply-WidgetAudioFix.ps1') -WidgetInstallation $bundleWidget
+if(-not $?){throw 'The audio patch could not be installed. Clearance was not updated.'}
 $bundleData=Join-Path $bundleHome 'plugin-data\codex-right-clearance-v3'
 $bundleSettingsPath=Join-Path $bundleData 'settings.json'
 $bundleSettings=Get-BundleJson $bundleSettingsPath

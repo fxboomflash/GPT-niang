@@ -52,14 +52,17 @@ function pluginEnabled() {
 function status() {
   const value = read(statusFile, {status:'not-started'});
   const registration=read(path.join(data,'startup-registration.json'),null);
-  const pending=registration?.enabled===true&&value.connectionSetup?.state==='connection-unavailable'&&value.status!=='active'&&value.status!=='original-layout';
-  return {...value,...pending?{status:'awaiting-manual-reopen',reason:'Local startup loader is registered. This already-running client has no connection; no automatic restart will be performed.'}:{}, enabled:settings().enabled === true, pluginEnabled:pluginEnabled(),
-    heartbeatFresh:Boolean(value.time && Date.now() - Date.parse(value.time) < 15000),
-    launcherRequired:false, debugPort:debugPort(), pluginVersion:'1.4.6',runtimeRevision:'dynamic-pet-7-attachment-reflow',automaticConnectionSetup:false,clientRestartAllowed:false,clearanceMode:preferences().mode,preferences:preferences(),fallbackClearanceCssPx:96,pollIntervalMs:300,startupRegistration:registration};
+  const heartbeatFresh=Boolean(value.time && Date.now() - Date.parse(value.time) < 15000);
+  const pending=heartbeatFresh&&value.connectionSetup?.state==='connection-unavailable'&&!['active','original-layout','stopped','disabled'].includes(value.status);
+  const stale=!heartbeatFresh&&value.pid&&!['stopped','disabled'].includes(value.status);
+  return {...value,...pending?{status:'awaiting-manual-reopen',reason:'The running client has no connection. The worker will keep waiting without restarting the client.'}:{},...stale?{status:'worker-unresponsive',lastKnownStatus:value.status,reason:'No recent worker heartbeat. The previous layout status is no longer current.'}:{}, enabled:settings().enabled === true, pluginEnabled:pluginEnabled(),
+    heartbeatFresh,
+    launcherRequired:false, debugPort:debugPort(), pluginVersion:'1.4.9',runtimeRevision:'dynamic-pet-9-startup-self-check',automaticConnectionSetup:false,clientRestartAllowed:false,clearanceMode:preferences().mode,preferences:preferences(),fallbackClearanceCssPx:96,pollIntervalMs:300,startupRegistration:registration,
+    startupSelfCheck:read(path.join(data,'startup-self-check.json'),{state:'not-started',running:false,trigger:'codex-process-start',intervalSeconds:60})};
 }
 function startWatcher(reason='control') {
   if (!settings().enabled || !pluginEnabled()) return;
-  fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason,pid:process.pid,pluginRoot:path.resolve(__dirname,'..'),version:'1.4.6'})+'\n');
+  fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason,pid:process.pid,pluginRoot:path.resolve(__dirname,'..'),version:'1.4.9'})+'\n');
   runFile('powershell.exe',['-NoLogo','-NoProfile','-ExecutionPolicy','RemoteSigned','-WindowStyle','Hidden','-File',path.join(__dirname,'Control.ps1'),'-Action','Bootstrap'],{windowsHide:true,timeout:20000,maxBuffer:16000}).catch(error=>write(statusFile,{time:new Date().toISOString(),status:'error',reason:'Independent worker startup failed: '+error.message}));
 }
 const geometrySource=fs.readFileSync(path.join(__dirname,'pet-geometry.js'),'utf8');
@@ -80,23 +83,24 @@ async function watch() {
   const acquired = await new Promise((resolve,reject) => {guard.once('error', e=>e.code==='EADDRINUSE'?resolve(false):reject(e));guard.listen(pipe,()=>resolve(true));});
   if (!acquired) return;
   const clients = new Map();
-  let stopping = false, lastSeen = Date.now(), verifiedAt = 0, lastValidation = null, lastSetup=0, verifiedPort=null, lastConnectionSetup=null;
+  let stopping = false, clientAbsentSince = null, clientAbsenceSamples=0, verifiedAt = 0, lastValidation = null, lastSetup=0, verifiedPort=null, lastConnectionSetup=null;
   let petObservation={status:'unavailable',pets:[]},lastPet=null,lastPetAt=0,lastReportAt=0,lastReportSignature='',lastSettingsOpen=0;
   process.on('SIGTERM',()=>{stopping=true;}); process.on('SIGINT',()=>{stopping=true;});
   const report = value => {
-    const signature=JSON.stringify([value.status,value.reason,value.results?.map(r=>[r.status,r.clearanceCssPx,r.requestedClearanceCssPx,r.placement,r.petReason])]);
+    const signature=JSON.stringify([value.status,value.reason,value.appliedPreferences,value.results?.map(r=>[r.status,r.clearanceCssPx,r.requestedClearanceCssPx,r.placement,r.petReason])]);
     if(signature===lastReportSignature&&Date.now()-lastReportAt<1500)return;
     lastReportAt=Date.now();lastReportSignature=signature;
-    write(statusFile,{time:new Date().toISOString(),pid:process.pid,connectionSetup:lastConnectionSetup,...value});
+    const hostSession=lastValidation?.clientSessions?.length===1?lastValidation.clientSessions[0]:null;
+    write(statusFile,{time:new Date().toISOString(),pid:process.pid,hostSession,connectionSetup:lastConnectionSetup,...value});
   };
-  async function evaluate(client, action) {
+  async function evaluate(client, action, appliedPreferences=preferences()) {
     const frames = frameList((await client.command('Page.getFrameTree')).frameTree).filter(f => trustedPage(f.url));
     const results=[];
     for(const frame of frames) {
       const contexts=[...client.contexts.values()].filter(c=>c.auxData?.isDefault===true && c.auxData.frameId===frame.id);
       if(contexts.length!==1)continue;
-      const options=JSON.stringify(preferences());
-      const output=await client.command('Runtime.evaluate',{expression:source+'\n(()=>{const result=autoClearance('+JSON.stringify(action)+','+JSON.stringify(petObservation)+','+options+');return {...result,settingsButton:codexClearanceSettingsButton('+JSON.stringify(action)+','+options+')}})();',contextId:contexts[0].id,returnByValue:true});
+      const options=JSON.stringify(appliedPreferences);
+      const output=await client.command('Runtime.evaluate',{expression:source+'\n(()=>{const result=autoClearance('+JSON.stringify(action)+','+JSON.stringify(petObservation)+','+options+');return {...result,pageVisible:document.visibilityState==="visible"&&innerWidth>0&&innerHeight>0,settingsButton:codexClearanceSettingsButton('+JSON.stringify(action)+','+options+')}})();',contextId:contexts[0].id,returnByValue:true});
       if(output.exceptionDetails)throw Error('Layout evaluation failed: '+(output.exceptionDetails.exception?.description||output.exceptionDetails.text));
       const result=output.result?.value;
       if(result?.settingsButton?.positionChanged&&validButtonPosition(result.settingsButton.positionChanged))savePreferences({buttonPosition:result.settingsButton.positionChanged});
@@ -119,8 +123,9 @@ async function watch() {
         if(verifiedPort!==port){await restoreAll();for(const client of clients.values())client.close();clients.clear();verifiedAt=0;}
         const response=await fetch(endpoint+'/json/list',{signal:AbortSignal.timeout(2500)});
         if(!response.ok)throw Error('Codex debug endpoint unavailable.');
-        const targets=await response.json(); lastSeen=Date.now();
+        const targets=await response.json(); clientAbsentSince=null; clientAbsenceSamples=0;
         if(Date.now()-verifiedAt>30000) {lastValidation=await validate(port);verifiedPort=port;verifiedAt=Date.now();}
+        lastConnectionSetup={state:'connected',port,clientRestartAllowed:false};
         const eligible=targets.slice(0,24).filter(t=>(['page','webview','other'].includes(t.type)&&trustedApp(t.url)||t.type==='webview'&&trustedWork(t.url))&&t.webSocketDebuggerUrl);
         const petTargets=targets.slice(0,24).filter(t=>t.type==='page'&&trustedPet(t.url)&&t.webSocketDebuggerUrl);
         const ids=new Set([...eligible,...petTargets].map(t=>t.id));
@@ -142,14 +147,14 @@ async function watch() {
         }
         const nativeObservation=await nativePet.sample(settings().nativePetInstallation,lastValidation.ownerPids);
         petObservation={status:[petObservation,nativeObservation].some(p=>p.status==='visible')?'visible':[petObservation,nativeObservation].some(p=>p.status==='unavailable')?'unavailable':'hidden',sources:[petObservation,nativeObservation]};
-        const results=[];
+        const results=[],appliedPreferences=preferences();
         for(const target of eligible) {
           try {
             const client=await clientFor(target);
-            results.push(...await evaluate(client,'tick'));
+            results.push(...await evaluate(client,'tick',appliedPreferences));
           } catch(error) {clients.get(target.id)?.close();clients.delete(target.id);results.push({status:'error',reason:error.message.slice(0,1000)});}
         }
-        report({status:results.some(x=>x?.status==='error')?'error':results.some(x=>x?.status==='active')?'active':results.some(x=>x?.status==='original')?'original-layout':'waiting-for-chat',activeInputs:results.filter(x=>x?.status==='active').length,version:lastValidation.version,debugPort:port,runtimeRevision:'dynamic-pet-7-attachment-reflow',pluginVersion:'1.4.6',clientRestartAllowed:false,pollIntervalMs:300,petMeasurement:petObservation,results});
+        report({status:results.some(x=>x?.status==='error')?'error':results.some(x=>x?.status==='active')?'active':results.some(x=>x?.status==='original')?'original-layout':'waiting-for-chat',activeInputs:results.filter(x=>x?.status==='active').length,version:lastValidation.version,debugPort:port,runtimeRevision:'dynamic-pet-9-startup-self-check',pluginVersion:'1.4.9',clientRestartAllowed:false,pollIntervalMs:300,petMeasurement:petObservation,appliedPreferences,results});
       } catch(error) {
         nextDelay=2500;
         await restoreAll(); for(const client of clients.values())client.close();clients.clear(); verifiedAt=0;
@@ -160,11 +165,17 @@ async function watch() {
             const setup=await runFile('powershell.exe',['-NoLogo','-NoProfile','-ExecutionPolicy','RemoteSigned','-WindowStyle','Hidden','-File',path.join(__dirname,'ensure-connection.ps1')],{windowsHide:true,timeout:20000,maxBuffer:16000});
             const connection=JSON.parse(setup.stdout.replace(/^\uFEFF/,''));
             lastConnectionSetup=connection;
+            if(connection.state==='not-running'){clientAbsentSince??=Date.now();clientAbsenceSamples++;}
+            else {clientAbsentSince=null;clientAbsenceSamples=0;}
             report({status:'waiting-for-connection',connection,clientRestartAllowed:false});
-          }catch(setupError){lastConnectionSetup={state:'unavailable',reason:setupError.message.slice(0,1200)};report({status:'waiting-for-connection',reason:'Connection detection failed; client left running.',clientRestartAllowed:false});}
+          }catch(setupError){clientAbsentSince=null;clientAbsenceSamples=0;lastConnectionSetup={state:'unavailable',reason:setupError.message.slice(0,1200)};report({status:'waiting-for-connection',reason:'Connection detection failed; client left running.',clientRestartAllowed:false});}
         }
-        // Wait briefly for a cold launch. Exit after Codex closes; no Windows login service.
-        if(Date.now()-lastSeen>180000)return;
+        // A missing endpoint is not evidence that the client closed. Keep waiting
+        // while it is running, and exit only after two confirmed absent samples.
+        if(clientAbsenceSamples>=2&&clientAbsentSince!==null&&Date.now()-clientAbsentSince>=30000&&lastConnectionSetup?.state==='not-running'){
+          report({status:'stopped',reason:'Client absence confirmed; worker stopped.',restored:true,clientRestartAllowed:false});
+          return;
+        }
       }
       await pause(nextDelay);
     }
@@ -193,7 +204,7 @@ function serve() {
       if(line.length>1048576)throw Error('Request too large.');
       request=JSON.parse(line);if(request.id===undefined)return;
       let result;
-      if(request.method==='initialize') {result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'codex-right-clearance',version:'1.4.6'}};startWatcher('mcp-initialize');}
+      if(request.method==='initialize') {result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'codex-right-clearance',version:'1.4.9'}};startWatcher('mcp-initialize');}
       else if(request.method==='ping')result={};
       else if(request.method==='tools/list')result={tools:names.map(name=>({name,description:descriptions[name],inputSchema:name==='configure'?preferenceSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:name==='status',destructiveHint:false,openWorldHint:false}}))};
       else if(request.method==='tools/call') {if(!names.includes(request.params?.name))throw Error('Unknown tool.');result={content:[{type:'text',text:JSON.stringify(await control(request.params.name,request.params.arguments??{}))}]};}

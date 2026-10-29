@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "codex-right-clearance",
-  "version": "1.4.6",
+  "version": "1.4.9",
   "description": "Adjust bottom-input right clearance to the measured local pet position and size; keep centered layouts unchanged.",
   "extensions": {
     "com.openai": {
@@ -9,7 +9,7 @@
       "interface": {
         "displayName": "输入框右侧避让",
         "shortDescription": "自动为右下角宠物留出输入框空间",
-        "longDescription": "本地运行。按桌宠实际位置和角色容器尺寸调整 Chat、Work、Codex 底部输入框右侧避让，移开或隐藏后恢复原宽，居中输入框保持原样。保留原 Codex 入口及已验证的本机启动接入，不会关闭或重新启动客户端。",
+        "longDescription": "本地运行。按桌宠实际位置和角色容器尺寸调整 Chat、Work、Codex 底部输入框右侧避让，居中时保持原样。每次启动软件后，每分钟自检一次；确认真实可见输入框有效缩进后停止本次自检，下次启动重新检查。不会关闭或重启客户端。",
         "developerName": "本地自用",
         "category": "Productivity",
         "capabilities": [
