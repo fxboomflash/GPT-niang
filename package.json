@@ -1,6 +1,6 @@
 {
   "name": "gpt-niang-dynamic-clearance-bundle",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Windows composer clearance and first-click audio fixes for T7moris/GPT-Niang; original upstream files and notices are preserved.",
   "license": "SEE LICENSE IN LICENSE AND NOTICE.md",

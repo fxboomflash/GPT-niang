@@ -38,12 +38,13 @@ try {
  $bundleSettings|Add-Member NoteProperty enabled $false -Force
  $bundleSettings|Add-Member NoteProperty autoRestart $false -Force
  Save-BundleJson $bundleSettingsPath $bundleSettings
- $bundleDeadline=[DateTime]::UtcNow.AddSeconds(20)
+ # Let an existing per-session checker finish its one-minute wait before replacing it.
+ $bundleDeadline=[DateTime]::UtcNow.AddSeconds(75)
  do{
-  $bundleWorkers=@(Get-CimInstance Win32_Process -Filter "Name='node.exe'"|Where-Object {$_.CommandLine-match '[\\/]codex-right-clearance[\\/].*[\\/]scripts[\\/]service\.cjs"?\s+watch(?:\s|$)'})
+  $bundleWorkers=@(Get-CimInstance Win32_Process -Filter "Name='node.exe'"|Where-Object {$_.CommandLine-and $_.CommandLine.IndexOf($bundleHome,[StringComparison]::OrdinalIgnoreCase)-ge 0-and ($_.CommandLine-match '[\\/]codex-right-clearance[\\/].*[\\/]scripts[\\/]service\.cjs"?\s+watch(?:\s|$)'-or $_.CommandLine-match '[\\/]codex-right-clearance[\\/].*[\\/]scripts[\\/]startup-self-check\.cjs"?\s+run(?:\s|$)')})
   if(-not $bundleWorkers.Count){break};Start-Sleep -Milliseconds 300
  }while([DateTime]::UtcNow-lt $bundleDeadline)
- if($bundleWorkers.Count){throw 'Previous clearance worker has not stopped gracefully. No client or widget was closed.'}
+ if($bundleWorkers.Count){throw 'Previous clearance worker or self-check has not stopped gracefully. No client or widget was closed.'}
  $bundleCatalog=(& $bundleCli plugin list --json)|ConvertFrom-Json
  if($LASTEXITCODE-ne 0){throw 'Cannot inspect installed plugins.'}
  $bundleInstalled=@($bundleCatalog.installed|Where-Object {$_.pluginId-eq 'codex-right-clearance@codex-ui-local'-and $_.installed})
@@ -63,6 +64,9 @@ try {
  $bundleControl=Join-Path $bundleCache 'scripts\Control.ps1'
  & powershell.exe -NoLogo -NoProfile -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File $bundleControl -Action Bootstrap
  if($LASTEXITCODE-ne 0){throw 'Cannot start the clearance worker.'}
+ $registrationOutput=@(& powershell.exe -NoLogo -NoProfile -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File (Join-Path $bundleCache 'scripts\RegisterStartup.ps1') -Action Ensure -HomeDirectory $bundleHome 2>&1)
+ $registrationExit=$LASTEXITCODE
+ $null=Assert-BundleStartupRegistration $registrationOutput $registrationExit
  Write-Output 'GPT-Niang dynamic clearance installed. The original client and widget were left running. If this client has no local connection yet, it will take effect the next time you normally reopen Codex.'
 } catch {
  $bundleFailure=$_.Exception.Message

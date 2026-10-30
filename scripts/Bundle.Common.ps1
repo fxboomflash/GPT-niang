@@ -48,3 +48,12 @@ function Test-BundleCache([string]$Source,[string]$Cache) {
  }
  return $true
 }
+function Assert-BundleStartupRegistration([string[]]$Output,[int]$ExitCode) {
+ if($ExitCode-ne 0){throw 'The startup registration could not be configured. The client was left running.'}
+ try{$result=($Output-join "`n")|ConvertFrom-Json}catch{throw 'The startup registration returned an invalid result.'}
+ if($result.state-eq 'registered'){$persistence=$result.registration.registryPersistence}
+ elseif($result.state-eq 'persistent-registration-verified'){$persistence=$result.registryPersistence}
+ else{throw 'The startup registration could not be verified.'}
+ if($persistence.rootNonVolatile-ne $true-or $persistence.packageNonVolatile-ne $true){throw 'The startup registration is not persistent.'}
+ return $result.state
+}

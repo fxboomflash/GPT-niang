@@ -57,12 +57,12 @@ function status() {
   const stale=!heartbeatFresh&&value.pid&&!['stopped','disabled'].includes(value.status);
   return {...value,...pending?{status:'awaiting-manual-reopen',reason:'The running client has no connection. The worker will keep waiting without restarting the client.'}:{},...stale?{status:'worker-unresponsive',lastKnownStatus:value.status,reason:'No recent worker heartbeat. The previous layout status is no longer current.'}:{}, enabled:settings().enabled === true, pluginEnabled:pluginEnabled(),
     heartbeatFresh,
-    launcherRequired:false, debugPort:debugPort(), pluginVersion:'1.4.9',runtimeRevision:'dynamic-pet-9-startup-self-check',automaticConnectionSetup:false,clientRestartAllowed:false,clearanceMode:preferences().mode,preferences:preferences(),fallbackClearanceCssPx:96,pollIntervalMs:300,startupRegistration:registration,
+    launcherRequired:false, debugPort:debugPort(), pluginVersion:'1.4.10',runtimeRevision:'dynamic-pet-9-startup-self-check',automaticConnectionSetup:false,clientRestartAllowed:false,clearanceMode:preferences().mode,preferences:preferences(),fallbackClearanceCssPx:96,pollIntervalMs:300,startupRegistration:registration,
     startupSelfCheck:read(path.join(data,'startup-self-check.json'),{state:'not-started',running:false,trigger:'codex-process-start',intervalSeconds:60})};
 }
 function startWatcher(reason='control') {
   if (!settings().enabled || !pluginEnabled()) return;
-  fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason,pid:process.pid,pluginRoot:path.resolve(__dirname,'..'),version:'1.4.9'})+'\n');
+  fs.appendFileSync(path.join(data,'bootstrap-events.jsonl'),JSON.stringify({time:new Date().toISOString(),reason,pid:process.pid,pluginRoot:path.resolve(__dirname,'..'),version:'1.4.10'})+'\n');
   runFile('powershell.exe',['-NoLogo','-NoProfile','-ExecutionPolicy','RemoteSigned','-WindowStyle','Hidden','-File',path.join(__dirname,'Control.ps1'),'-Action','Bootstrap'],{windowsHide:true,timeout:20000,maxBuffer:16000}).catch(error=>write(statusFile,{time:new Date().toISOString(),status:'error',reason:'Independent worker startup failed: '+error.message}));
 }
 const geometrySource=fs.readFileSync(path.join(__dirname,'pet-geometry.js'),'utf8');
@@ -154,7 +154,7 @@ async function watch() {
             results.push(...await evaluate(client,'tick',appliedPreferences));
           } catch(error) {clients.get(target.id)?.close();clients.delete(target.id);results.push({status:'error',reason:error.message.slice(0,1000)});}
         }
-        report({status:results.some(x=>x?.status==='error')?'error':results.some(x=>x?.status==='active')?'active':results.some(x=>x?.status==='original')?'original-layout':'waiting-for-chat',activeInputs:results.filter(x=>x?.status==='active').length,version:lastValidation.version,debugPort:port,runtimeRevision:'dynamic-pet-9-startup-self-check',pluginVersion:'1.4.9',clientRestartAllowed:false,pollIntervalMs:300,petMeasurement:petObservation,appliedPreferences,results});
+        report({status:results.some(x=>x?.status==='error')?'error':results.some(x=>x?.status==='active')?'active':results.some(x=>x?.status==='original')?'original-layout':'waiting-for-chat',activeInputs:results.filter(x=>x?.status==='active').length,version:lastValidation.version,debugPort:port,runtimeRevision:'dynamic-pet-9-startup-self-check',pluginVersion:'1.4.10',clientRestartAllowed:false,pollIntervalMs:300,petMeasurement:petObservation,appliedPreferences,results});
       } catch(error) {
         nextDelay=2500;
         await restoreAll(); for(const client of clients.values())client.close();clients.clear(); verifiedAt=0;
@@ -204,7 +204,7 @@ function serve() {
       if(line.length>1048576)throw Error('Request too large.');
       request=JSON.parse(line);if(request.id===undefined)return;
       let result;
-      if(request.method==='initialize') {result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'codex-right-clearance',version:'1.4.9'}};startWatcher('mcp-initialize');}
+      if(request.method==='initialize') {result={protocolVersion:request.params?.protocolVersion || '2024-11-05',capabilities:{tools:{}},serverInfo:{name:'codex-right-clearance',version:'1.4.10'}};startWatcher('mcp-initialize');}
       else if(request.method==='ping')result={};
       else if(request.method==='tools/list')result={tools:names.map(name=>({name,description:descriptions[name],inputSchema:name==='configure'?preferenceSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:name==='status',destructiveHint:false,openWorldHint:false}}))};
       else if(request.method==='tools/call') {if(!names.includes(request.params?.name))throw Error('Unknown tool.');result={content:[{type:'text',text:JSON.stringify(await control(request.params.name,request.params.arguments??{}))}]};}

@@ -77,7 +77,9 @@ async function runSelfCheck({detect,readWorker,readState,saveState,startWorker,e
    }
    if(!outcome){
     if(!identity(current))outcome={passed:false,reason:'client-detection-unavailable',repair:false};
-    else if(current.state!=='connected')outcome={passed:false,reason:'connection-unavailable',repair:true};
+    else if(current.state!=='connected')outcome=current.requiresClientReopen===true?
+     {passed:false,reason:'startup-connection-missing',detail:'Current client was opened without the layout connection. Persistent registration is for its next start; no client restart was performed.',repair:false}:
+     {passed:false,reason:'connection-unavailable',repair:true};
     else outcome=inspect(readWorker(),session,now());
    }
    state={...state,checkCount:state.checkCount+1,lastCheckedAt:new Date(now()).toISOString(),lastReason:outcome.reason,lastDetail:outcome.detail??null};

@@ -8,7 +8,7 @@ foreach($file in Get-ChildItem -LiteralPath $verifyRoot -Filter '*.ps1' -Recurse
 }
 if($verifyErrors.Count){throw ($verifyErrors-join "`n")}
 foreach($file in Get-ChildItem -LiteralPath $verifyRoot -Filter '*.json' -Recurse -File -Force){$null=Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8|ConvertFrom-Json}
-$required=@('README.md','LICENSE','NOTICE.md','UPSTREAM.json','Install.ps1','Disable.ps1','.agents\plugins\marketplace.json','plugins\codex-right-clearance\native\NativePetGeometry.cs','vendor\GPT-Niang\LICENSE','vendor\GPT-Niang\gpt-niang-usage\assets\CHARACTER-NOTICE.txt','scripts\Apply-WidgetAudioFix.ps1','patches\widget-audio\manifest.json','patches\widget-audio\runtime\audio.ps1','patches\widget-audio\runtime\ui-settings.ps1')
+$required=@('README.md','LICENSE','NOTICE.md','UPSTREAM.json','Install.ps1','Disable.ps1','.agents\plugins\marketplace.json','plugins\codex-right-clearance\native\NativePetGeometry.cs','plugins\codex-right-clearance\native\PersistentStartupRegistration.cs','vendor\GPT-Niang\LICENSE','vendor\GPT-Niang\gpt-niang-usage\assets\CHARACTER-NOTICE.txt','scripts\Apply-WidgetAudioFix.ps1','patches\widget-audio\manifest.json','patches\widget-audio\runtime\audio.ps1','patches\widget-audio\runtime\ui-settings.ps1')
 foreach($relative in $required){if(-not (Test-Path -LiteralPath (Join-Path $verifyRoot $relative) -PathType Leaf)){throw ('Missing required file: '+$relative)}}
 foreach($line in Get-Content -LiteralPath (Join-Path $verifyRoot 'UPSTREAM-FILES.sha256') -Encoding UTF8){
  if($line-notmatch '^([0-9A-Fa-f]{64})  (.+)$'){throw 'Invalid upstream file manifest.'}

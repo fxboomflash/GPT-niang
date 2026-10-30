@@ -9,6 +9,7 @@ function Get-ClearanceSettingsFeedback($Preferences,$Settings,$Status,[DateTime]
  if($Settings.enabled-ne $true){return Feedback 'disabled' '参数已保存，避让插件尚未启用' $selection}
  $sampleAt=[DateTime]::MinValue
  if($null-eq $Status-or -not [DateTime]::TryParse([string]$Status.time,[ref]$sampleAt)-or ($Now-$sampleAt.ToUniversalTime()).TotalSeconds-gt 15-or ($Now-$sampleAt.ToUniversalTime()).TotalSeconds-lt -1){return Feedback 'stale' '参数已保存，尚未收到实时结果' '可点击“重新应用”，只重连本插件。'}
+ if($Status.connectionSetup.requiresClientReopen-eq $true){return Feedback 'startup-connection-missing' '参数已保存，本次启动缺少避让连接' '需完整重新打开 Codex 一次；调整滑块不能补建连接。'}
  if($Status.connectionSetup.state-ne 'connected'){return Feedback 'disconnected' '参数已保存，输入框连接尚未恢复' '可点击“重新应用”；不会关闭或重启 Codex。'}
  if(-not (Test-ClearancePreferencesEqual $Preferences $Status.appliedPreferences)-or $sampleAt.ToUniversalTime()-lt $ChangedAt.ToUniversalTime()){return Feedback 'pending' '参数已保存，等待插件应用' $selection}
  $visible=@($Status.results|Where-Object {$_.pageVisible-eq $true})

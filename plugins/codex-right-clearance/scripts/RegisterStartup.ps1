@@ -23,6 +23,11 @@ function DebugRegistry([string]$name){
  if(Test-Path -LiteralPath $key){$item=Get-Item -LiteralPath $key;$values=[ordered]@{};foreach($property in $item.GetValueNames()){$values[$property]=$item.GetValue($property)};return $values}
  return @{}
 }
+$registrationMutex=New-Object Threading.Mutex($false,'Local\CodexClearanceStartupRegistration')
+$registrationLock=$false
+try{
+try{$registrationLock=$registrationMutex.WaitOne(30000)}catch [Threading.AbandonedMutexException]{$registrationLock=$true}
+if(-not $registrationLock){throw 'Another startup registration update is in progress; no changes made.'}
 $previous=ReadRecord
 if($Action-eq 'Status'){[ordered]@{registration=$previous;registry=$(if($previous){DebugRegistry $previous.packageFullName})}|ConvertTo-Json -Depth 8 -Compress;exit 0}
 if(-not ('ClearancePackageDebug' -as [type])){
@@ -82,16 +87,56 @@ if(-not (Test-Path -LiteralPath $helper)){
 }
 $config=[ordered]@{targetExecutable=$target;targetSha256=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash;dataDirectory=$data;codexConfigFile=(Join-Path $homePath 'config.toml')}
 [IO.File]::WriteAllText((Join-Path $nativeHome 'loader-config.json'),($config|ConvertTo-Json),$utf8)
+if(-not ('ClearancePersistentRegistration' -as [type])){Add-Type -Path (Join-Path $native 'PersistentStartupRegistration.cs')}
+function EnsurePersistentRegistration {
+ $rootPath='Software\Microsoft\Windows\CurrentVersion\PackagedAppXDebug'
+ $debugger='"'+$helper+'"'
+ $allowedPackages=@($package.PackageFullName)
+ $allowedDebuggers=@($debugger)
+ if($previous){
+  if($previous.packageFullName){$allowedPackages+=$previous.packageFullName}
+  if($previous.helper){$allowedDebuggers+=('"'+$previous.helper+'"')}
+ }
+ if($existing.Count-and (OwnDebugger $existing)){$allowedDebuggers+=[string]$existing['']}
+ $root=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($rootPath,$true)
+ $backup=$null
+ try{
+  if($root){
+   $rootVolatile=[ClearancePersistentRegistration]::IsVolatile($root)
+   $child=$root.OpenSubKey($package.PackageFullName,$true)
+   try{$packageVolatile=$null-ne $child-and [ClearancePersistentRegistration]::IsVolatile($child)}finally{if($child){$child.Dispose()}}
+   if($rootVolatile-or $packageVolatile){
+    $children=@()
+    foreach($name in $root.GetSubKeyNames()){
+     $key=$root.OpenSubKey($name)
+     try{$children+=@{name=$name;defaultValue=$key.GetValue('');valueNames=@($key.GetValueNames());subKeyNames=@($key.GetSubKeyNames())}}finally{$key.Dispose()}
+    }
+    $backup=Join-Path $data ('startup-registry-backup-'+[DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffffff')+'.json')
+    [IO.File]::WriteAllText($backup,(@{time=[DateTime]::UtcNow.ToString('o');rootPath=$rootPath;rootVolatile=$rootVolatile;packageVolatile=$packageVolatile;children=$children;previousRegistration=$previous}|ConvertTo-Json -Depth 8),$utf8)
+   }
+  }
+ }finally{if($root){$root.Dispose()}}
+ $result=[ClearancePersistentRegistration]::Ensure([Microsoft.Win32.Registry]::CurrentUser,$rootPath,$package.PackageFullName,$debugger,[string[]]$allowedPackages,[string[]]$allowedDebuggers)
+ if(-not $backup-and $previous-and $previous.registryPersistence){$backup=$previous.registryPersistence.backup}
+ $migration=$result.Migration
+ if(-not $migration-and $previous-and $previous.registryPersistence){$migration=$previous.registryPersistence.migration}
+ return [ordered]@{rootNonVolatile=$result.RootNonVolatile;packageNonVolatile=$result.PackageNonVolatile;migrated=$result.Migrated;migration=$migration;verifiedAt=[DateTime]::UtcNow.ToString('o');backup=$backup;windowsRebootVerified=$false;clientClosed=$false}
+}
 $existing=DebugRegistry $package.PackageFullName
 if($existing.Count){
  if(-not (OwnDebugger $existing)){throw 'This package already has another startup debugger; it was left unchanged.'}
 }
 if($previous-and $previous.enabled-and $previous.packageFullName-eq $package.PackageFullName-and $existing.Count-and [ClearancePackageDebug]::SameFile((CurrentDebuggerPath $existing),$helper)){
- $previous.helper=CurrentDebuggerPath $existing;$previous.helperSha256=(Get-FileHash -LiteralPath $previous.helper -Algorithm SHA256).Hash;SaveRecord $previous
- [ordered]@{state='already-registered';helper=$previous.helper}|ConvertTo-Json -Compress;exit 0
+ $persistence=EnsurePersistentRegistration
+ $previous.helper=CurrentDebuggerPath $existing;$previous.helperSha256=(Get-FileHash -LiteralPath $previous.helper -Algorithm SHA256).Hash
+ $previous|Add-Member -NotePropertyName registryPersistence -NotePropertyValue $persistence -Force
+ SaveRecord $previous
+ [ordered]@{state='persistent-registration-verified';helper=$previous.helper;registryPersistence=$persistence}|ConvertTo-Json -Depth 8 -Compress;exit 0
 }
 $result=[ClearancePackageDebug]::Set($package.PackageFullName,('"'+$helper+'"'),$true)
 if($result-lt 0){throw ('Windows startup registration failed: 0x'+$result.ToString('X8'))}
-$record=[ordered]@{time=[DateTime]::UtcNow.ToString('o');enabled=$true;packageFullName=$package.PackageFullName;helper=$helper;helperSha256=(Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash;registryKey=('HKCU:\Software\Microsoft\Windows\CurrentVersion\PackagedAppXDebug\'+$package.PackageFullName);clientFilesModified=$false;clientClosed=$false;actualCodexColdStartVerified=$false;mechanism='Windows per-package startup debugger; resumes the original process after configuring startup arguments.'}
+$persistence=EnsurePersistentRegistration
+$record=[ordered]@{time=[DateTime]::UtcNow.ToString('o');enabled=$true;packageFullName=$package.PackageFullName;helper=$helper;helperSha256=(Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash;registryKey=('HKCU:\Software\Microsoft\Windows\CurrentVersion\PackagedAppXDebug\'+$package.PackageFullName);registryPersistence=$persistence;clientFilesModified=$false;clientClosed=$false;actualCodexColdStartVerified=$false;mechanism='Windows per-package persistent startup debugger; resumes the original process after configuring startup arguments.'}
 SaveRecord $record
 [ordered]@{state='registered';registration=$record;registry=(DebugRegistry $package.PackageFullName)}|ConvertTo-Json -Depth 8 -Compress
+}finally{if($registrationLock){$registrationMutex.ReleaseMutex()};$registrationMutex.Dispose()}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "codex-right-clearance",
-  "version": "1.4.9",
+  "version": "1.4.10",
   "description": "Adjust bottom-input right clearance to the measured local pet position and size; keep centered layouts unchanged.",
   "extensions": {
     "com.openai": {

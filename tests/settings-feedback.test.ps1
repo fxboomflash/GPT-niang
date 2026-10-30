@@ -28,6 +28,7 @@ $s=Fixture;$s.results[0].domButtonsUncovered=$false;Check 'covered buttons not s
 $s=Fixture;$s.results=@(@{status='original';pageVisible=$true;placement='centered';requestedClearanceCssPx=90});Check 'centered input explained' $s 'centered'
 $s=Fixture;$s.results=@(@{status='original';pageVisible=$true;placement='bottom';requestedClearanceCssPx=0});Check 'no overlapping pet explained' $s 'original'
 $s=Fixture;$s.connectionSetup.state='connection-unavailable';Check 'missing connection explained' $s 'disconnected'
+$s=Fixture;$s.connectionSetup.state='connection-unavailable';$s.connectionSetup.requiresClientReopen=$true;Check 'startup connection cannot be repaired with a slider' $s 'startup-connection-missing'
 $s=Fixture;$s.appliedPreferences=$null;Check 'old worker without acknowledgement pending' $s 'pending'
 $s=Fixture;Check 'newer edit waits for sample' $s 'pending' -ChangedAt $now.AddSeconds(1)
 $s=Fixture;Check 'failed save never claimed applied' $s 'not-saved' -Settings @{enabled=$true;mode='auto';gapCssPx=0;manualClearanceCssPx=106}

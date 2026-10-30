@@ -27,4 +27,4 @@ if($owned){
  [ordered]@{state='connected';pid=$main.ProcessId;startedAt=$startedAt;packageFullName=$package.PackageFullName;version=[string]$package.Version;port=$port;clientRestartAllowed=$false}|ConvertTo-Json -Compress;exit 0
 }
 $reason=if($configuredPort.Success){'Configured connection is not ready; leaving the client running.'}else{'This client was opened without a debug connection; leaving its layout unchanged.'}
-[ordered]@{state='connection-unavailable';pid=$main.ProcessId;startedAt=$startedAt;packageFullName=$package.PackageFullName;reason=$reason;clientRestartAllowed=$false}|ConvertTo-Json -Compress
+[ordered]@{state='connection-unavailable';pid=$main.ProcessId;startedAt=$startedAt;packageFullName=$package.PackageFullName;reason=$reason;requiresClientReopen=(-not $configuredPort.Success);clientRestartAllowed=$false}|ConvertTo-Json -Compress
